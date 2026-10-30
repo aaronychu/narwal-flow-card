@@ -2,7 +2,17 @@
 
 一张独立的 Home Assistant 自定义卡片，采用接近云鲸 App 的浅色蓝紫色样式。无需 Mushroom / button-card / card-mod。
 
-## 安装
+## HACS 安装（推荐）
+
+1. 打开 HACS → 右上角菜单 → 自定义存储库。
+2. 添加 `https://github.com/aaronychu/narwal-flow-card`，类别选择 **Dashboard（仪表盘）**；旧版可能显示 Lovelace / Plugin。
+3. 搜索 Narwal Flow 清洁空间并下载，刷新浏览器。
+4. 检查「设置 → 仪表盘 → 资源」是否已有 JavaScript 模块 `/hacsfiles/narwal-flow-card/narwal-flow-card.js`；如果没有则手动添加。不要同时加载手动安装的 `/local/` 版本。
+5. 编辑仪表盘 → 添加卡片 → 手动，粘贴 `examples/card.yaml`。
+
+这是 HACS 自定义仓库，尚未进入 HACS 默认商店列表；需先手动添加仓库。后端 `rudyll/narwal_r` 集成仍需单独安装。
+
+## 手动安装
 
 1. 把 `narwal-flow-card.js` 上传到 Home Assistant 的 `/config/www/narwal-flow-card.js`。没有 www 目录则新建。
 2. 「设置 → 仪表盘 → 右上角菜单 → 资源」添加：
