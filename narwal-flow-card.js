@@ -1,5 +1,8 @@
-/* Narwal Flow card — standalone Home Assistant custom card. */
+/* Narwal Flow Card v0.2.0 — standalone Home Assistant custom card. */
 class NarwalFlowCard extends HTMLElement {
+  static getConfigElement() { return document.createElement('narwal-flow-card-editor'); }
+  static getStubConfig() { return {name: '云鲸 · 清洁空间', experimental_settings: false}; }
+
   setConfig(config) {
     this.config = {...config}; this.selected = new Set(); this.entities = {};
     this.ready = false; this.loading = false; this.busy = false;
@@ -96,4 +99,116 @@ class NarwalFlowCard extends HTMLElement {
 }
 if (!customElements.get('narwal-flow-card')) customElements.define('narwal-flow-card',NarwalFlowCard);
 window.customCards = window.customCards || [];
-window.customCards.push({type:'narwal-flow-card',name:'Narwal Flow 清洁空间',description:'云鲸地图、区域多选和基站控制'});
+window.customCards.push({type:'narwal-flow-card',name:'Narwal Flow 清洁空间',description:'云鲸地图、区域多选和基站控制',documentationURL:'https://github.com/aaronychu/narwal-flow-card'});
+
+class NarwalFlowCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({mode: 'open'});
+    this.areas = [];
+    this.registry = [];
+  }
+  setConfig(config) {
+    this.config = {...config, rooms: (config.rooms || []).map(room => ({...room}))};
+    this.render();
+  }
+  set hass(hass) {
+    this._hass = hass;
+    if (!this.loaded && !this.loading) this.loadOptions();
+  }
+  async loadOptions() {
+    this.loading = true;
+    const results = await Promise.allSettled([
+      this._hass.callWS({type: 'config/area_registry/list'}),
+      this._hass.callWS({type: 'config/entity_registry/list'})
+    ]);
+    if (results[0].status === 'fulfilled') this.areas = results[0].value;
+    if (results[1].status === 'fulfilled') this.registry = results[1].value;
+    this.loadError = results.some(result => result.status === 'rejected');
+    this.loading = false;
+    this.loaded = true;
+    this.render();
+  }
+  escape(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  update(patch) {
+    this.config = {...this.config, ...patch};
+    for (const key of Object.keys(this.config)) if (this.config[key] === undefined) delete this.config[key];
+    this.dispatchEvent(new CustomEvent('config-changed', {
+      detail: {config: {...this.config, rooms: this.config.rooms.map(room => ({...room}))}},
+      bubbles: true, composed: true
+    }));
+  }
+  changeRoom(index, patch) {
+    const rooms = this.config.rooms.map((room, i) => i === index ? {...room, ...patch} : {...room});
+    if (patch.area_id) {
+      // A duplicate area would make two buttons toggle the same selection.
+      if (rooms.some((room, i) => i !== index && room.area_id === patch.area_id)) {
+        this.error = '这个 HA 区域已经添加，请选择其他区域。'; this.render(); return;
+      }
+    }
+    this.error = '';
+    this.update({rooms});
+    this.render();
+  }
+  addRoom() {
+    const area = this.areas.find(item => !this.config.rooms.some(room => room.area_id === item.area_id));
+    if (!area) return;
+    this.update({rooms: [...this.config.rooms, {name: area.name, area_id: area.area_id}]});
+    this.render();
+  }
+  removeRoom(index) {
+    this.update({rooms: this.config.rooms.filter((_, i) => i !== index)});
+    this.render();
+  }
+  render() {
+    if (!this.config) return;
+    const esc = value => this.escape(value);
+    const selectedVacuum = this.registry.find(item => item.entity_id === this.config.entity);
+    const vacuums = this.registry.filter(item => item.entity_id.startsWith('vacuum.') && item.platform === 'narwal_r' && !item.disabled_by);
+    const fields = {
+      battery:['电池','sensor'],charging_state:['充电状态','sensor'],cleaning_area:['清扫面积','sensor'],
+      cleaning_time:['清扫时间','sensor'],map:['地图','camera'],cleaning_mode:['清洁模式','select'],
+      suction_level:['吸力等级','select'],mop_humidity:['拖地湿度','select'],wash_mop:['清洗拖布','button'],
+      dry_mop:['烘干拖布','button'],empty_dustbin:['清空尘盒','button'],locate:['寻找机器人','button']
+    };
+    const areaOptions = (value) => {
+      const items = [...this.areas];
+      if (value && !items.some(area => area.area_id === value)) items.push({area_id:value,name:`${value}（未找到区域）`});
+      return items.map(area => `<option value="${esc(area.area_id)}" ${area.area_id === value?'selected':''}>${esc(area.name)} · ${esc(area.area_id)}</option>`).join('');
+    };
+    this.shadowRoot.innerHTML = `<style>
+      :host{display:block;color:var(--primary-text-color);font-family:inherit}*{box-sizing:border-box}.form{display:grid;gap:18px;padding:4px 0 16px}label{display:grid;gap:7px;font-size:13px}input,select{width:100%;min-width:0;font:inherit;color:var(--primary-text-color);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#ddd);border-radius:10px;padding:11px}input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--primary-color,#6675f5);outline-offset:2px}h3{font-size:15px;margin:0}p{font-size:12px;line-height:1.7;color:var(--secondary-text-color);margin:8px 0}.room{display:grid;grid-template-columns:minmax(90px,1fr) minmax(110px,1.4fr) auto;gap:8px;align-items:end;padding:12px 0;border-bottom:1px solid var(--divider-color,#eee)}button{cursor:pointer;border:1px solid var(--divider-color,#ddd);background:var(--card-background-color,#fff);color:var(--primary-color,#6675f5);padding:11px;border-radius:10px;font:inherit}button:disabled{opacity:.5;cursor:default}.add{margin-top:12px}.toggle{display:flex;align-items:center;gap:10px}.toggle input{width:18px;height:18px}.advanced{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}summary{cursor:pointer;font-size:14px}.error{color:var(--error-color,#b33)}.info{border-radius:12px;padding:12px;background:var(--secondary-background-color,#f5f6fa)}@media(max-width:420px){.room{grid-template-columns:1fr auto}.room label:first-child{grid-column:1/-1}.advanced{grid-template-columns:1fr}}
+    </style><div class="form">
+      <label>卡片名称<input id="name" type="text" value="${esc(this.config.name || '')}" placeholder="云鲸 · 清洁空间"></label>
+      <label>扫地机器人<input id="entity" type="text" list="vacuums" value="${esc(this.config.entity || '')}" placeholder="留空：自动识别唯一的云鲸设备"><datalist id="vacuums">${vacuums.map(item=>`<option value="${esc(item.entity_id)}">${esc(this._hass?.states[item.entity_id]?.attributes.friendly_name || item.entity_id)}</option>`).join('')}</datalist></label>
+      <section><h3>清洁房间</h3><p>选择 HA 区域，并自定义卡片上的房间名称。请先在机器人实体设置中完成「分区映射到区域」。地图里的机器人房间 ID 不能直接填入这里。</p>
+      ${this.config.rooms.map((room,index)=>`<div class="room"><label>显示名称<input data-room-name="${index}" value="${esc(room.name)}"></label><label>HA 区域<select data-room-area="${index}">${areaOptions(room.area_id)}</select></label><button data-remove="${index}" aria-label="删除${esc(room.name)}">删除</button></div>`).join('')}
+      <button id="add" class="add" ${!this.areas.some(area=>!this.config.rooms.some(room=>room.area_id===area.area_id))?'disabled':''}>＋ 添加房间</button>
+      ${!this.areas.length?'<p>正在读取区域，或当前没有可用区域。请先在 HA 中创建区域后点击重新读取。</p>':''}
+      ${this.error?`<p class="error" role="alert">${esc(this.error)}</p>`:''}</section>
+      <section><label class="toggle"><input id="experimental" type="checkbox" ${this.config.experimental_settings?'checked':''}>启用实验控制</label><p>允许操作清洁模式、吸力和拖地湿度。集成本地写入尚未全部验证；开启后需确认机器人实际响应。此开关不会启用清洁次数。</p></section>
+      <details><summary>高级：手动指定关联实体</summary><p>通常自动识别即可。留空表示自动识别；仅在识别错误时指定。</p><div class="advanced">${Object.entries(fields).map(([key,[name,domain]])=>`<label>${name}<input data-override="${key}" list="options-${key}" value="${esc(this.config.entities?.[key] || '')}" placeholder="自动识别"><datalist id="options-${key}">${Object.keys(this._hass?.states || {}).filter(id=>id.startsWith(domain+'.') && (!selectedVacuum || this.registry.some(item=>item.entity_id===id && item.device_id===selectedVacuum.device_id))).map(id=>`<option value="${esc(id)}">${esc(this._hass.states[id].attributes.friendly_name || id)}</option>`).join('')}</datalist></label>`).join('')}</div></details>
+      <div class="info"><p>未配置房间时执行全屋清洁。清洁次数由后端集成能力决定，目前不支持设置。</p>${this.loadError?'<p class="error">区域或实体列表读取失败，请使用管理员账号检查权限后重新读取。</p>':''}<button id="reload">重新读取区域和实体</button></div>
+    </div>`;
+    const root = this.shadowRoot;
+    root.getElementById('name').onchange = event => this.update({name: event.target.value.trim() || undefined});
+    root.getElementById('entity').onchange = event => {
+      const entity = event.target.value.trim();
+      if (entity && !entity.startsWith('vacuum.')) { event.target.setCustomValidity('请选择 vacuum 域的机器人实体'); event.target.reportValidity(); return; }
+      event.target.setCustomValidity(''); this.update({entity: entity || undefined});
+    };
+    root.getElementById('experimental').onchange = event => this.update({experimental_settings:event.target.checked});
+    root.getElementById('add').onclick = () => this.addRoom();
+    root.getElementById('reload').onclick = () => { if (!this.loading) this.loadOptions(); };
+    root.querySelectorAll('[data-room-name]').forEach(input => input.onchange = () => this.changeRoom(Number(input.dataset.roomName),{name:input.value.trim() || this.config.rooms[Number(input.dataset.roomName)].area_id}));
+    root.querySelectorAll('[data-room-area]').forEach(select => select.onchange = () => this.changeRoom(Number(select.dataset.roomArea),{area_id:select.value}));
+    root.querySelectorAll('[data-remove]').forEach(button => button.onclick = () => this.removeRoom(Number(button.dataset.remove)));
+    root.querySelectorAll('[data-override]').forEach(input => input.onchange = () => {
+      const entities = {...this.config.entities};
+      if (input.value.trim()) entities[input.dataset.override] = input.value.trim();
+      else delete entities[input.dataset.override];
+      this.update({entities:Object.keys(entities).length?entities:undefined});
+    });
+  }
+}
+if (!customElements.get('narwal-flow-card-editor')) customElements.define('narwal-flow-card-editor',NarwalFlowCardEditor);
