@@ -1,0 +1,11 @@
+{
+  "name": "narwal-flow-card",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "test": "node --check narwal-flow-card.js && node tests/editor.cjs && node tests/integration.cjs"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.12"
+  }
+}

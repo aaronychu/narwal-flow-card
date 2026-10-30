@@ -1,0 +1,31 @@
+const {parseHTML}=require('linkedom');
+const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/strict');
+const {window}=parseHTML('<html><body></body></html>');
+const context=vm.createContext({window,document:window.document,HTMLElement:window.HTMLElement,customElements:window.customElements,CustomEvent:window.CustomEvent,console});
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../narwal-flow-card.js'),'utf8'),context);
+const Card=window.customElements.get('narwal-flow-card');
+(async()=>{
+ const editor=Card.getConfigElement();
+ editor.setConfig({type:'custom:narwal-flow-card',name:'原名称',custom_option:42,entities:{battery:'sensor.battery'}});
+ const events=[];editor.addEventListener('config-changed',event=>events.push(event));
+ editor.hass={states:{'vacuum.flow':{attributes:{friendly_name:'云鲸'}}},callWS:async({type})=>type.includes('area_registry')?[{area_id:'living',name:'客厅'},{area_id:'kitchen',name:'厨房'}]:[{entity_id:'vacuum.flow',platform:'narwal_r',device_id:'a'}]};
+ await new Promise(resolve=>setImmediate(resolve));
+ let root=editor.shadowRoot;
+ assert(root.getElementById('vacuums').innerHTML.includes('vacuum.flow'));
+ root.getElementById('name').value='Mika 002';root.getElementById('name').onchange({target:root.getElementById('name')});
+ assert.equal(events.at(-1).detail.config.name,'Mika 002');assert.equal(events.at(-1).detail.config.custom_option,42);
+ assert(events.at(-1).bubbles);/* linkedom does not implement Event.composed. */
+ root.getElementById('add').click();root.getElementById('add').click();
+ assert.equal(editor.config.rooms.length,2);assert.equal(editor.config.rooms[1].area_id,'kitchen');
+ const roomInput=root.querySelector('[data-room-name="0"]');roomInput.value='起居室';roomInput.onchange();assert.equal(editor.config.rooms[0].name,'起居室');
+ editor.changeRoom(1,{area_id:'living'});assert.equal(editor.config.rooms[1].area_id,'kitchen');assert(editor.error);
+ const toggle=root.getElementById('experimental');toggle.checked=true;toggle.onchange({target:toggle});assert.equal(editor.config.experimental_settings,true);
+ const override=root.querySelector('[data-override="battery"]');override.value='';override.onchange();assert.equal(editor.config.entities,undefined);
+ const snapshot=events[0].detail.config;root.querySelector('[data-remove="0"]').click();assert.equal(editor.config.rooms.length,1);assert.equal(snapshot.rooms.length,0);
+ editor.setConfig({...editor.config,name:'<script>bad()</script>',rooms:[{name:'<img src=x onerror=bad()>',area_id:'missing'}]});
+ assert.equal(root.querySelectorAll('script').length,0);assert.equal(root.querySelectorAll('img').length,0);assert(root.innerHTML.includes('未找到区域'));
+ const before=root.getElementById('name');editor.hass=editor._hass;assert.equal(root.getElementById('name'),before);
+ const card=window.document.createElement('narwal-flow-card');card.setConfig({type:'custom:narwal-flow-card'});assert(card.shadowRoot.innerHTML.includes('清洁区域'));
+ const failed=Card.getConfigElement();failed.setConfig({});failed.hass={states:{},callWS:async()=>{throw Error('denied')}};await new Promise(resolve=>setImmediate(resolve));assert(failed.shadowRoot.innerHTML.includes('读取失败'));
+ console.log('通过：编辑器注册、设备选项、配置事件、未知配置保留、房间添加/重命名/删除、防重复、实验开关、实体覆盖、转义、输入焦点保留、权限失败提示、卡片渲染。');
+})().catch(error=>{console.error(error);process.exitCode=1});

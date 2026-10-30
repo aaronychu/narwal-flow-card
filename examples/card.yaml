@@ -1,16 +1,7 @@
 type: custom:narwal-flow-card
 name: Mika 002
-# 仅有一台 narwal_r 机器人时，自动识别所有实体。
-# 如果有多台设备，请取消注释并填写真实实体 ID：
+# 多台机器人时，请选择真实 vacuum 实体：
 # entity: vacuum.your_robot
-# area_id 是 HA 区域 ID，必须先在吸尘器实体设置里映射房间。
-# 下面只是格式示例；不要直接使用示例区域 ID：
-# rooms:
-#   - name: 客厅
-#     area_id: living_room
-#   - name: 厨房
-#     area_id: kitchen
-#   - name: 主卧
-#     area_id: bedroom
-# 默认只展示模式、吸力和湿度；测试本地写入时可改为 true。
+# narwal 后端默认从 Map HD 自动读取房间，无需填写 rooms。
+# narwal_r 后端仍需在可视化编辑器选择已映射的 HA 区域。
 experimental_settings: false
